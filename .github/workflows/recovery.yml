@@ -103,7 +103,10 @@ jobs:
           cp vbmeta-verification-disabled.img firmware-output/vbmeta.img
           tar --format=ustar -C firmware-output -cf firmware-output/Odin_AP_fastbootd_BYG1.tar recovery.img vbmeta.img
           tar -tf firmware-output/Odin_AP_fastbootd_BYG1.tar
-          sha256sum firmware-output/recovery.img firmware-output/vbmeta.img firmware-output/Odin_AP_fastbootd_BYG1.tar > firmware-output/SHA256SUMS
+          (
+            cd firmware-output
+            sha256sum recovery.img vbmeta.img Odin_AP_fastbootd_BYG1.tar > SHA256SUMS
+          )
           {
             printf 'Input recovery is deliberately excluded.\n'
             printf 'This artifact requires an unlocked bootloader and intentionally disables AVB verification via vbmeta.img.\n'
