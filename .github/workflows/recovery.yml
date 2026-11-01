@@ -33,6 +33,11 @@ on:
         required: true
         default: false
         type: boolean
+      EXPORT_FIRMWARE_ARTIFACT:
+        description: 'Creates a 1-day artifact with patched recovery, replacement vbmeta, and Odin AP tar; never includes the input image'
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -82,6 +87,29 @@ jobs:
           chmod +x script2.sh
           ./script2.sh
 
+      - name: Assemble explicitly requested Odin artifact
+        if: ${{ success() && inputs.EXPORT_FIRMWARE_ARTIFACT }}
+        env:
+          PATCH_MODE: ${{ inputs.PATCH_MODE }}
+          AVB_MODE: ${{ inputs.AVB_MODE }}
+        run: |
+          set -euo pipefail
+          test "$PATCH_MODE" = apply
+          test "$AVB_MODE" = disable-verification
+          test -s recovery-patched-unsigned.img
+          test -s vbmeta-verification-disabled.img
+          mkdir -p firmware-output
+          cp recovery-patched-unsigned.img firmware-output/recovery.img
+          cp vbmeta-verification-disabled.img firmware-output/vbmeta.img
+          tar --format=ustar -C firmware-output -cf firmware-output/Odin_AP_fastbootd_BYG1.tar recovery.img vbmeta.img
+          tar -tf firmware-output/Odin_AP_fastbootd_BYG1.tar
+          sha256sum firmware-output/recovery.img firmware-output/vbmeta.img firmware-output/Odin_AP_fastbootd_BYG1.tar > firmware-output/SHA256SUMS
+          {
+            printf 'Input recovery is deliberately excluded.\n'
+            printf 'This artifact requires an unlocked bootloader and intentionally disables AVB verification via vbmeta.img.\n'
+            printf 'Load Odin_AP_fastbootd_BYG1.tar in Odin AP; do not flash raw images independently.\n'
+          } > firmware-output/README.txt
+
       - name: Collect diagnostic report
         if: ${{ always() }}
         run: |
@@ -96,3 +124,12 @@ jobs:
           name: recovery-fastbootd-audit
           path: output/
           if-no-files-found: warn
+
+      - name: Upload explicitly requested firmware artifact
+        if: ${{ success() && inputs.EXPORT_FIRMWARE_ARTIFACT }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fastbootd-recovery-BYG1-avb-disabled
+          path: firmware-output/
+          retention-days: 1
+          if-no-files-found: error

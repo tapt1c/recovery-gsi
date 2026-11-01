@@ -31,6 +31,12 @@ Do not upload an original recovery image or firmware package to a public
 release, issue, or file host. Use a short-lived private HTTPS link when running
 the workflow and remove it afterwards.
 
+`EXPORT_FIRMWARE_ARTIFACT=true` is a separate opt-in acknowledgement. It
+uploads no input firmware; it uploads only the generated patched `recovery.img`,
+the generated verification-disabled `vbmeta.img`, checksums, and an AP `.tar`
+for Odin. The artifact expires after one day. Do not enable this on a public
+repository unless distributing those generated images is intentional.
+
 ## Running the workflow
 
 1. Open **Actions → Recovery fastbootd audit → Run workflow**.
