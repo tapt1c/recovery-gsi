@@ -25,12 +25,15 @@ jobs:
 
     - name: Fetch image from URL
       env:
-          RECOVERY_URL: ${{ github.event.inputs.RECOVERY_URL }}
+        RECOVERY_URL: ${{ github.event.inputs.RECOVERY_URL }}
       run: |
         curl -fL --retry 3 "$RECOVERY_URL" -o recovery.img
         test -s recovery.img
         file recovery.img
-        ls -lh recovery.img
+        if ! file -b recovery.img | grep -qiE 'Android bootimg|Android boot image'; then
+          echo "Downloaded file is not recognized as an Android boot image"
+          exit 1
+          fi
     
     - name: Patch Process-1
       run: |
