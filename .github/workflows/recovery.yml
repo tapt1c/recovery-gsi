@@ -58,7 +58,7 @@ jobs:
           chmod +x script1.sh magiskboot
           ./script1.sh
 
-      - name: Audit or build an explicitly unverified candidate
+      - name: Audit or test-build an explicitly unverified candidate
         env:
           PATCH_MODE: ${{ inputs.PATCH_MODE }}
           ALLOW_UNVERIFIED_CANDIDATE: ${{ inputs.ALLOW_UNVERIFIED_CANDIDATE }}
@@ -67,20 +67,12 @@ jobs:
           chmod +x script2.sh
           ./script2.sh
 
-      - name: Collect report and opt-in candidate
+      - name: Collect diagnostic report
         if: ${{ always() }}
-        env:
-          PATCH_MODE: ${{ inputs.PATCH_MODE }}
-          ALLOW_UNVERIFIED_CANDIDATE: ${{ inputs.ALLOW_UNVERIFIED_CANDIDATE }}
         run: |
           set -euo pipefail
           mkdir -p output
           test -f patch-report.txt && cp patch-report.txt output/ || true
-          if [[ "$PATCH_MODE" == apply && "$ALLOW_UNVERIFIED_CANDIDATE" == true && -s recovery-patched-unsigned.img ]]; then
-            cp recovery-patched-unsigned.img output/
-            sha256sum output/recovery-patched-unsigned.img > output/recovery-patched-unsigned.img.sha256
-            printf '%s\n' 'UNVERIFIED: this candidate is not signed by the stock AVB key and is not flash-ready with stock vbmeta.' > output/README.txt
-          fi
 
       - name: Upload diagnostic artifact
         if: ${{ always() }}
