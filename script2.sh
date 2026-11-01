@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+trap 'echo "FAILED at line $LINENO: $BASH_COMMAND"' ERR
 
 mkdir unpack
 cd unpack
@@ -19,6 +20,23 @@ cd unpack
 ../magiskboot hexpatch system/bin/recovery 27f02eeb30b1681c 27f02eeb30b9681c
 ../magiskboot hexpatch system/bin/recovery b4f082ee28b1701c b4f082ee28b970c1
 ../magiskboot hexpatch system/bin/recovery 9ef0f4ec28b1701c 9ef0f4ec28b9701c
-../magiskboot cpio ramdisk.cpio 'add 0755 system/bin/recovery system/bin/recovery'
+echo "=== Extracting ramdisk ==="
+
+set +e
+../magiskboot cpio ramdisk.cpio extract
+EXTRACT_STATUS=$?
+set -e
+
+echo "Extract exit code: $EXTRACT_STATUS"
+
+echo "=== Checking recovery binary ==="
+ls -lh system/bin/recovery || exit 1
+
+echo "=== Ramdisk check finished ==="
+
+if [ "$EXTRACT_STATUS" -ne 0 ]; then
+    echo "WARNING: Extraction returned a non-zero exit code"
+    exit "$EXTRACT_STATUS"
+fi
 ../magiskboot repack ../r.img new-boot.img
 cp new-boot.img ../recovery-patched.img
