@@ -19,9 +19,13 @@ old byte patterns are **not** treated as universal patches.
   the intended change, and never applies the same profile twice. The candidate
   remains inside the disposable CI runner; no firmware-derived image is
   uploaded as an artifact.
-- The workflow never creates a new AVB footer with a generated key. Such a key
-  is not part of the stock `vbmeta` trust chain. An opt-in `apply` output is
-  labelled `UNVERIFIED` and is not flash-ready with stock `vbmeta`.
+- `apply` with `AVB_MODE=stock` leaves the stock-vbmeta limitation in place:
+  the candidate is not flash-ready with stock `vbmeta`.
+- `apply` with `AVB_MODE=disable-verification` requires a second explicit
+  acknowledgement. It creates a minimal root `vbmeta` with AVB flag `2`
+  (`VERIFICATION_DISABLED`) and no descriptors. This is a replacement for the
+  root `vbmeta` partition, not a generated key trusted by Samsung. It is a
+  security downgrade and is never uploaded by this workflow.
 
 Do not upload an original recovery image or firmware package to a public
 release, issue, or file host. Use a short-lived private HTTPS link when running
@@ -35,8 +39,10 @@ the workflow and remove it afterwards.
 3. Keep `PATCH_MODE` as `audit` and inspect `patch-report.txt`.
 
 `PATCH_MODE=apply` is intentionally opt-in and does not establish device boot
-compatibility or AVB compatibility. It is for controlled analysis only, not a
-recommendation to flash a device.
+compatibility. `AVB_MODE=disable-verification` can make a candidate usable on
+an unlocked device only if its bootloader permits an unsigned replacement root
+`vbmeta`; the workflow cannot prove that device-specific behavior. It is for
+controlled analysis only, not a recommendation to flash a device.
 
 ## Scope and limitations
 

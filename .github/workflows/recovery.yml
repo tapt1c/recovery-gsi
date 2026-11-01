@@ -20,6 +20,19 @@ on:
         required: true
         default: false
         type: boolean
+      AVB_MODE:
+        description: 'stock keeps the stock-vbmeta limitation; disable-verification makes a non-exported replacement vbmeta'
+        required: true
+        default: stock
+        type: choice
+        options:
+          - stock
+          - disable-verification
+      ALLOW_AVB_DISABLE:
+        description: 'Required for disable-verification; this is a security downgrade and never exports firmware'
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -62,6 +75,8 @@ jobs:
         env:
           PATCH_MODE: ${{ inputs.PATCH_MODE }}
           ALLOW_UNVERIFIED_CANDIDATE: ${{ inputs.ALLOW_UNVERIFIED_CANDIDATE }}
+          AVB_MODE: ${{ inputs.AVB_MODE }}
+          ALLOW_AVB_DISABLE: ${{ inputs.ALLOW_AVB_DISABLE }}
         run: |
           set -euo pipefail
           chmod +x script2.sh

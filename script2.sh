@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Diagnose and, only on an exact known match, patch Samsung recovery's
-# fastbootd gate. This script deliberately does not re-sign AVB: a locally
-# generated key cannot be trusted by the stock vbmeta chain.
+# fastbootd gate. The optional AVB mode creates a new root vbmeta with AVB
+# verification disabled; it never claims that a generated key extends the
+# stock Samsung trust chain.
 
 set -euo pipefail
 
@@ -11,6 +12,10 @@ prepared_image="$repo_root/r.img"
 report="$repo_root/patch-report.txt"
 mode="${PATCH_MODE:-audit}"
 allow_unverified="${ALLOW_UNVERIFIED_CANDIDATE:-false}"
+avb_mode="${AVB_MODE:-stock}"
+allow_avb_disable="${ALLOW_AVB_DISABLE:-false}"
+avbtool="$repo_root/avbtool"
+disabled_vbmeta="$repo_root/vbmeta-verification-disabled.img"
 work_dir=""
 verify_dir=""
 
@@ -31,6 +36,7 @@ cleanup() {
 trap cleanup EXIT
 
 [[ "$mode" == "audit" || "$mode" == "apply" ]] || die "PATCH_MODE must be audit or apply"
+[[ "$avb_mode" == "stock" || "$avb_mode" == "disable-verification" ]] || die "AVB_MODE must be stock or disable-verification"
 [[ -x "$magiskboot" ]] || die "magiskboot is not executable: $magiskboot"
 [[ -s "$prepared_image" ]] || die "Prepared image not found: $prepared_image"
 [[ -f "$report" ]] || die "Preparation report not found: $report"
@@ -125,7 +131,11 @@ a16_old_count="$(hex_count "$recovery_binary" "$a16_old")"
 a16_new_count="$(hex_count "$recovery_binary" "$a16_new")"
 
 if [[ "$mode" == "audit" ]]; then
-  printf 'PATCH_MODE=audit\nPATCH_RESULT=NOT_MODIFIED\n' >> "$report"
+  {
+    printf 'PATCH_MODE=audit\n'
+    printf 'AVB_MODE=%s\n' "$avb_mode"
+    printf 'PATCH_RESULT=NOT_MODIFIED\n'
+  } >> "$report"
   printf 'Audit complete; no recovery binary was modified.\n'
   popd >/dev/null
   exit 0
@@ -163,12 +173,36 @@ verify_binary="system/bin/recovery"
 (( $(hex_count "$verify_binary" "$a16_new") == 1 )) || die "Candidate does not contain exactly one new gate"
 candidate_binary_sha="$(sha256sum "$verify_binary" | awk '{print $1}')"
 popd >/dev/null
+
+avb_status='NOT_SIGNED_BY_STOCK_KEY_DO_NOT_FLASH_WITH_STOCK_VBMETA'
+if [[ "$avb_mode" == "disable-verification" ]]; then
+  [[ "$allow_avb_disable" == "true" ]] || die "Refusing AVB disable mode without ALLOW_AVB_DISABLE=true"
+  [[ -f "$avbtool" ]] || die "avbtool is missing: $avbtool"
+
+  # Flag 2 is AVB_VBMETA_IMAGE_FLAGS_VERIFICATION_DISABLED.  No descriptors
+  # are copied from stock vbmeta: this output is an explicit replacement for
+  # the root vbmeta partition, never a signature-compatible update.
+  python3 "$avbtool" make_vbmeta_image --flags 2 --padding_size 4096 --output "$disabled_vbmeta"
+  disabled_info="$(python3 "$avbtool" info_image --image "$disabled_vbmeta")"
+  [[ "$disabled_info" == *'Algorithm:                NONE'* ]] || die "Disabled vbmeta unexpectedly has a signing algorithm"
+  [[ "$disabled_info" == *'Flags:                    2'* ]] || die "Disabled vbmeta does not have the verification-disabled flag"
+  [[ "$disabled_info" == *'Descriptors:'$'\n''    (none)'* ]] || die "Disabled vbmeta unexpectedly contains descriptors"
+  python3 "$avbtool" verify_image --image "$disabled_vbmeta"
+  avb_status='VERIFICATION_DISABLED_VBMETA_BUILT_NOT_EXPORTED'
+fi
+
 {
   printf 'PATCH_MODE=apply\n'
-  printf 'PATCH_RESULT=CANDIDATE_BUILT_NOT_AVB_SIGNED\n'
+  printf 'AVB_MODE=%s\n' "$avb_mode"
+  printf 'PATCH_RESULT=CANDIDATE_BUILT\n'
   printf 'CANDIDATE_IMAGE_SHA256=%s\n' "$(sha256sum "$candidate" | awk '{print $1}')"
   printf 'CANDIDATE_RECOVERY_BINARY_SHA256=%s\n' "$candidate_binary_sha"
-  printf 'AVB_STATUS=NOT_SIGNED_BY_STOCK_KEY_DO_NOT_FLASH_WITH_STOCK_VBMETA\n'
+  printf 'AVB_STATUS=%s\n' "$avb_status"
+  if [[ "$avb_mode" == "disable-verification" ]]; then
+    printf 'VBMETA_DISABLED_SHA256=%s\n' "$(sha256sum "$disabled_vbmeta" | awk '{print $1}')"
+    printf 'VBMETA_DISABLED_SIZE=%s\n' "$(wc -c < "$disabled_vbmeta")"
+    printf 'VBMETA_DISABLED_FLAGS=2\n'
+  fi
 } >> "$report"
-printf 'Candidate rebuilt and structurally verified; it is deliberately not AVB-signed.\n'
+printf 'Candidate rebuilt and structurally verified. AVB mode: %s.\n' "$avb_mode"
 popd >/dev/null
