@@ -1,60 +1,91 @@
-name: RECOVERY
+name: Recovery fastbootd audit
 
 on:
   workflow_dispatch:
     inputs:
       RECOVERY_URL:
-        description: 'RECOVERY URL'
+        description: 'Temporary HTTPS URL to the exact recovery.img to audit'
         required: true
-        default: 'https://transfer.sh/(RECOMMENDED)'
+        type: string
+      PATCH_MODE:
+        description: 'audit only reports findings; apply creates an explicitly unverified candidate'
+        required: true
+        default: audit
+        type: choice
+        options:
+          - audit
+          - apply
+      ALLOW_UNVERIFIED_CANDIDATE:
+        description: 'Required for apply; candidate is not signed by Samsung AVB key and is not flash-ready'
+        required: true
+        default: false
+        type: boolean
 
-env:
-  RECOVERY_URL: https://oshi.at/Rpjg
+permissions:
+  contents: read
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-
+  audit:
+    runs-on: ubuntu-24.04
     steps:
-    - name: Check Out
-      uses: actions/checkout@main
+      - name: Check out workflow
+        uses: actions/checkout@v4
 
-    - name: Prepare the environment
-      run: |
-        sudo apt install git wget lz4 tar openssl python3 -y
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes lz4
 
-    - name: Fetch image from URL
-      env:
-        RECOVERY_URL: ${{ github.event.inputs.RECOVERY_URL }}
-      run: |
-        curl -fL --retry 3 "$RECOVERY_URL" -o recovery.img
-        test -s recovery.img
-        file recovery.img
-        if ! file -b recovery.img | grep -qiE 'Android bootimg|Android boot image'; then
-          echo "Downloaded file is not recognized as an Android boot image"
-          exit 1
+      - name: Download and identify recovery image
+        env:
+          RECOVERY_URL: ${{ inputs.RECOVERY_URL }}
+        run: |
+          set -euo pipefail
+          curl --fail --location --proto '=https' --retry 3 --retry-all-errors "$RECOVERY_URL" --output recovery.img
+          test -s recovery.img
+          test "$(dd if=recovery.img bs=8 count=1 status=none)" = 'ANDROID!'
+          file recovery.img
+          sha256sum recovery.img
+
+      - name: Verify input AVB footer
+        run: |
+          set -euo pipefail
+          python3 avbtool verify_image --image recovery.img
+
+      - name: Prepare boot-image payload
+        run: |
+          set -euo pipefail
+          chmod +x script1.sh magiskboot
+          ./script1.sh
+
+      - name: Audit or build an explicitly unverified candidate
+        env:
+          PATCH_MODE: ${{ inputs.PATCH_MODE }}
+          ALLOW_UNVERIFIED_CANDIDATE: ${{ inputs.ALLOW_UNVERIFIED_CANDIDATE }}
+        run: |
+          set -euo pipefail
+          chmod +x script2.sh
+          ./script2.sh
+
+      - name: Collect report and opt-in candidate
+        if: ${{ always() }}
+        env:
+          PATCH_MODE: ${{ inputs.PATCH_MODE }}
+          ALLOW_UNVERIFIED_CANDIDATE: ${{ inputs.ALLOW_UNVERIFIED_CANDIDATE }}
+        run: |
+          set -euo pipefail
+          mkdir -p output
+          test -f patch-report.txt && cp patch-report.txt output/ || true
+          if [[ "$PATCH_MODE" == apply && "$ALLOW_UNVERIFIED_CANDIDATE" == true && -s recovery-patched-unsigned.img ]]; then
+            cp recovery-patched-unsigned.img output/
+            sha256sum output/recovery-patched-unsigned.img > output/recovery-patched-unsigned.img.sha256
+            printf '%s\n' 'UNVERIFIED: this candidate is not signed by the stock AVB key and is not flash-ready with stock vbmeta.' > output/README.txt
           fi
-    
-    - name: Patch Process-1
-      run: |
-        chmod a+x script1.sh
-        chmod a+x magiskboot
-        ./script1.sh
 
-    - name: Patch Process-2
-      run: |
-        chmod a+x script2.sh
-        ./script2.sh
-        python3 avbtool extract_public_key --key phh.pem --output phh.pub.bin
-        python3 avbtool add_hash_footer --partition_name recovery --partition_size $(wc -c recovery.img |cut -f 1 -d ' ') --image recovery-patched.img --key phh.pem --algorithm SHA256_RSA4096
-        mkdir output && cd output
-        mv ../recovery-patched.img recovery.img
-        tar cvf fastbootd-recovery.tar recovery.img
-        md5sum -t fastbootd-recovery.tar >> fastbootd-recovery.tar
-        mv fastbootd-recovery.tar fastbootd-recovery.tar.md5
-
-    - name: Upload Recovery
-      uses: actions/upload-artifact@v4
-      with:
-        path: /home/runner/work/recovery/recovery/output/*.md5
-        name: recovery-fastboot
+      - name: Upload diagnostic artifact
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: recovery-fastbootd-audit
+          path: output/
+          if-no-files-found: warn
