@@ -16,7 +16,9 @@ old byte patterns are **not** treated as universal patches.
   not an ignored error.
 - `apply` requires an exact, unique, reviewed profile and an explicit
   acknowledgement. It verifies that the rebuilt ramdisk still contains exactly
-  the intended change, and never applies the same profile twice.
+  the intended change, and never applies the same profile twice. The candidate
+  remains inside the disposable CI runner; no firmware-derived image is
+  uploaded as an artifact.
 - The workflow never creates a new AVB footer with a generated key. Such a key
   is not part of the stock `vbmeta` trust chain. An opt-in `apply` output is
   labelled `UNVERIFIED` and is not flash-ready with stock `vbmeta`.
