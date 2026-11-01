@@ -1,19 +1,50 @@
-# Similar script
-You can also refer this [script](https://github.com/engineer4t/fastboot-patcher)
+# Samsung recovery fastbootd audit
 
+This repository audits Samsung recovery images for the userspace-fastboot
+(`fastbootd`) gate. It is based on the historical work by
+[phhusson](https://github.com/phhusson/samsung-galaxy-a51-gsi-boot), but the
+old byte patterns are **not** treated as universal patches.
 
-# Patch-Recovery
-This CI service patches recovery images of Samsung to enable Fastbootd. Based on Phh's [script](https://github.com/phhusson/samsung-galaxy-a51-gsi-boot)
+## Safety model
 
-# How to use:
-- Fork this repo.
-- Extract your recovery.img.lz4 and upload recovery.img (not lz4) to [transfer.sh](https://transfer.sh/) or any other file hosting sites. Once uploaded right click on the Download button and copy the URL. Avoid Gdrive links for now as it has been causing an error in some cases. 
-- Head over to Actions tab. Click on RECOVERY -> Run workflow. Insert the copied URL in the RECOVERY URL field and Start the workflow
-- The Patching process will start
-- A Patched-Recovery.zip will be uploaded at the end of the process. Download it and extract your patched recovery image. The Image will already also be repacked to .tar for flashing directly through Odin
-![](https://s3.bmp.ovh/imgs/2022/04/19/91ef3a3ee9255e9c.png)
-- Flash vbmeta_disabled_r if needed
+- The default GitHub Actions mode is `audit`: it does not modify or upload a
+  recovery image. It uploads only `patch-report.txt`.
+- The downloaded input must be an Android boot image whose embedded AVB footer
+  verifies before any unpacking starts.
+- Every historical signature, including the current upstream additions, is
+  counted and reported. A missing alternate signature is a diagnostic result,
+  not an ignored error.
+- `apply` requires an exact, unique, reviewed profile and an explicit
+  acknowledgement. It verifies that the rebuilt ramdisk still contains exactly
+  the intended change, and never applies the same profile twice.
+- The workflow never creates a new AVB footer with a generated key. Such a key
+  is not part of the stock `vbmeta` trust chain. An opt-in `apply` output is
+  labelled `UNVERIFIED` and is not flash-ready with stock `vbmeta`.
 
-# Credits
-- [Phhusson](https://github.com/phhusson) Without his script nothing would be possible at the first place
-- [James Nguyen](https://github.com/thongass000) Helping me in simplifying the scripts and tweaking it
+Do not upload an original recovery image or firmware package to a public
+release, issue, or file host. Use a short-lived private HTTPS link when running
+the workflow and remove it afterwards.
+
+## Running the workflow
+
+1. Open **Actions → Recovery fastbootd audit → Run workflow**.
+2. Supply a temporary HTTPS download URL for the exact `recovery.img` to be
+   audited.
+3. Keep `PATCH_MODE` as `audit` and inspect `patch-report.txt`.
+
+`PATCH_MODE=apply` is intentionally opt-in and does not establish device boot
+compatibility or AVB compatibility. It is for controlled analysis only, not a
+recommendation to flash a device.
+
+## Scope and limitations
+
+`fastbootd` requires more than a changed branch: its binary, fastboot HAL,
+SELinux policy, dynamic-partition access, and the device's AVB policy must all
+work together. A matching signature, a successful repack, or a successful CI
+run is therefore not proof that a recovery is safe to boot or suitable for
+flashing a GSI.
+
+## Credits
+
+- [Pierre-Hugues Husson](https://github.com/phhusson)
+- [James Nguyen](https://github.com/thongass000)
